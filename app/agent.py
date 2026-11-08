@@ -16,7 +16,7 @@ import inspect
 import json
 from pathlib import Path
 
-from pydantic_ai import Agent
+from pydantic_ai import Agent, DeferredToolRequests, DeferredToolResults
 from pydantic_ai.exceptions import ModelHTTPError
 from fastmcp import Client
 from pydantic_ai.mcp import MCPToolset, StdioTransport
@@ -30,7 +30,7 @@ from app.config import MODEL, api_error_message, get_api_key
 
 INSTRUCTIONS = """\
 あなたはAIエンジニアリング講座（AIE2026）の学習支援エージェントです。
-- 用語や講座に固有のことを答える前に、必ず search_glossary で用語集を確認する。
+用語について回答する前に、必ず search_glossary で用語集を確認する。
 - 回の内容を聞かれたら get_lecture_summary を使う。
 - 用語集に見つからないことは、推測で断定せず「用語集にはない」と伝える。
 - 回答の最後に、関係する回（第N回）を示す。
@@ -38,9 +38,13 @@ INSTRUCTIONS = """\
 """
 
 # モデルは実行時に渡す（テストではAPIを呼ばない TestModel に差し替えるため）
-agent = Agent(instructions=INSTRUCTIONS)
+agent = Agent(
+    instructions=INSTRUCTIONS,
+    output_type=[str, DeferredToolRequests],
+)
 agent.tool_plain(tools.search_glossary)
 agent.tool_plain(tools.get_lecture_summary)
+agent.tool_plain(tools.save_learning_log, requires_approval=True)
 
 # TODO(第3回 演習): tools.py に make_quiz を作り、ここで登録しよう
 
@@ -105,7 +109,7 @@ def print_trace(result) -> None:
             if isinstance(part, ToolCallPart):
                 print(f"[tool call]   {part.tool_name}({part.args})")
             elif isinstance(part, ToolReturnPart):
-                print(f"[tool return] {part.tool_name} -> {str(part.content)[:120]}…")
+                print(f"[tool return] {part.tool_name} -> {part.content}")
     print(f"[usage] {result.usage}")
 
 
@@ -132,10 +136,26 @@ def main() -> None:
     except ModelHTTPError as e:
         print(api_error_message(e.status_code, str(e.body)[:200]))
         raise SystemExit(1)
+    while isinstance(result.output, DeferredToolRequests):
+        approvals = DeferredToolResults()
+
+        for call in result.output.approvals:
+            print("\n保存する内容:")
+            print(call.args_as_dict().get("content", ""))
+            answer = input("保存してよいですか？ [y/N]: ")
+            approvals.approvals[call.tool_call_id] = (
+                answer.strip().lower() == "y"
+            )
+
+        result = target.run_sync(
+            message_history=result.all_messages(),
+            deferred_tool_results=approvals,
+            model=build_model(),
+        )
+
     print(result.output)
     if args.trace:
         print_trace(result)
-
 
 if __name__ == "__main__":
     main()

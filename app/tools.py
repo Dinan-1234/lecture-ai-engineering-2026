@@ -31,8 +31,7 @@ def _names(entry: dict) -> list[str]:
 def search_glossary(query: str) -> str:
     """講座の用語集から用語を検索し、定義と、どの回で扱うかを返す。
 
-    AIエンジニアリングの用語や、この講座（AIE2026）に固有の言葉について
-    答える前に使うこと。query には調べたい用語を1つだけ入れる（例: "LoRA"）。
+    AIエンジニアリングの用語や、この講座（AIE2026）に固有の言葉について答える前に使うこと。query には調べたい複数の用語を空白で区切ってまとめて入れる（例: "LoRA QLoRA"）。
     """
     q = _normalize(query)
     if not q:
@@ -77,3 +76,12 @@ def get_lecture_summary(lecture: int) -> str:
         available = sorted(p.stem for p in (DATA_DIR / "lectures").glob("*.md"))
         return f"第{lecture}回の要点はまだありません。用意されている回: {', '.join(available)}"
     return path.read_text(encoding="utf-8")
+def save_learning_log(content: str) -> str:
+    """学んだ内容を記録する。利用者から保存を求められたときに使う。"""
+    from pathlib import Path
+
+    path = Path("learning_log.md")
+    with path.open("a", encoding="utf-8") as f:
+        f.write(content + "\n\n")
+
+    return "学習内容を learning_log.md に保存しました。"
